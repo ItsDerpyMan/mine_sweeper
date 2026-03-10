@@ -34,6 +34,7 @@ namespace mine_sweeper.render
     {
         private const int TileSize = 16;
         private Canvas _canvas;
+        private Canvas _uiOverlay;
         private Dictionary<string, BitmapSource> _sprites = new();
 
         private VisualHost _host;
@@ -45,9 +46,14 @@ namespace mine_sweeper.render
         private int _playerX;
         private int _playerY;
 
-        public Render(Canvas canvas)
+        private List<Button> _mineButtons = new();
+
+        public event Action<int, int>? OnMineRequested;
+
+        public Render(Canvas canvas, Canvas uiOverlay)
         {
             _canvas = canvas;
+            _uiOverlay = uiOverlay;
         }
 
         public void LoadSprites()
@@ -135,6 +141,73 @@ namespace mine_sweeper.render
             using (DrawingContext dc = _entityVisual.RenderOpen())
             {
                 dc.DrawImage(_sprites["Player"], new Rect(x * TileSize, y * TileSize, TileSize, TileSize));
+            }
+        }
+
+        public void UpdateMineButtons(World world, Camera camera)
+        {
+            foreach (var btn in _mineButtons)
+                _uiOverlay.Children.Remove(btn);
+            _mineButtons.Clear();
+
+            int[][] offsets = { new[] {0,-1}, new[] {0,1}, new[] {-1,0}, new[] {1,0} };
+
+            foreach (var off in offsets)
+            {
+                int tx = _playerX + off[0];
+                int ty = _playerY + off[1];
+
+                if (tx < 0 || tx >= _worldWidth || ty < 0 || ty >= _worldHeight)
+                    continue;
+
+                Tile tile = world.GetTile(tx, ty);
+                if (tile.Resource == null)
+                    continue;
+
+                Point screenPos = camera.WorldToScreen(tx, ty);
+                double tileScreenSize = TileSize * camera.Scale;
+
+                var btn = new Button
+                {
+                    Content = $"Mine [E]\n{tile.Resource.Type}",
+                    FontSize = 9,
+                    Padding = new Thickness(2),
+                    Background = new SolidColorBrush(Color.FromArgb(200, 40, 40, 40)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderBrush = System.Windows.Media.Brushes.Gray,
+                    BorderThickness = new Thickness(1),
+                    Tag = new int[] { tx, ty }
+                };
+
+                btn.Click += (s, e) => OnMineRequested?.Invoke(tx, ty);
+
+                btn.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                double btnWidth = btn.DesiredSize.Width;
+                double btnHeight = btn.DesiredSize.Height;
+
+                Canvas.SetLeft(btn, screenPos.X + (tileScreenSize - btnWidth) / 2);
+                Canvas.SetTop(btn, screenPos.Y - btnHeight - 2);
+
+                _uiOverlay.Children.Add(btn);
+                _mineButtons.Add(btn);
+            }
+        }
+
+        public void RedrawTerrain(World world)
+        {
+            using (DrawingContext dc = _terrainVisual.RenderOpen())
+            {
+                for (int x = 0; x < _worldWidth; x++)
+                {
+                    for (int y = 0; y < _worldHeight; y++)
+                    {
+                        Tile tile = world.GetTile(x, y);
+                        Rect rect = new Rect(x * TileSize, y * TileSize, TileSize, TileSize);
+                        dc.DrawImage(_sprites[tile.Type.ToString()], rect);
+                        if (tile.Resource != null)
+                            dc.DrawImage(_sprites[tile.Resource.Type.ToString()], rect);
+                    }
+                }
             }
         }
     }
