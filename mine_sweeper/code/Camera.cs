@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 
@@ -43,10 +40,19 @@ namespace mine_sweeper.render
             RenderOptions.SetBitmapScalingMode(canvas, BitmapScalingMode.NearestNeighbor);
 
         }
+        public double Scale => 3;
+
         public void SetCords(int x, int y)
         {
             PosX = x; PosY = y;
             Update();
+        }
+
+        public Point WorldToScreen(double tileX, double tileY)
+        {
+            double screenX = tileX * TileSize * Scale + _translate.X;
+            double screenY = tileY * TileSize * Scale + _translate.Y;
+            return new Point(screenX, screenY);
         }
 
         private void Update()

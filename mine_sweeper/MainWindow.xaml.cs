@@ -27,7 +27,7 @@ namespace mine_sweeper
             TileY = (int)area.ActualHeight / TileSize;
             _world = new World(TileX, TileY);
 
-            _render = new Render(area);
+            _render = new Render(area, uiOverlay);
             _render.LoadSprites();
 
             _playerX = TileX / 2;
@@ -38,6 +38,9 @@ namespace mine_sweeper
             _camera = new Camera(area, TileX, TileY);
             _camera.SetCords(_playerX, _playerY);
 
+            _render.OnMineRequested += MineResource;
+            _render.UpdateMineButtons(_world, _camera);
+
             this.KeyDown += OnKeyDown;
             this.Focus();
         }
@@ -45,6 +48,12 @@ namespace mine_sweeper
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
             if (_world == null || _camera == null || _render == null) return;
+
+            if (e.Key == Key.E)
+            {
+                MineNearestResource();
+                return;
+            }
 
             int newX = _playerX;
             int newY = _playerY;
@@ -69,7 +78,45 @@ namespace mine_sweeper
 
                 _render.DrawPlayer(_playerX, _playerY, _world);
                 _camera.SetCords(_playerX, _playerY);
+                _render.UpdateMineButtons(_world, _camera);
             }
+        }
+
+        private void MineNearestResource()
+        {
+            int[][] offsets = { new[] {0,-1}, new[] {0,1}, new[] {-1,0}, new[] {1,0} };
+            foreach (var off in offsets)
+            {
+                int tx = _playerX + off[0];
+                int ty = _playerY + off[1];
+                if (tx >= 0 && tx < _world.Width && ty >= 0 && ty < _world.Height)
+                {
+                    Tile tile = _world.GetTile(tx, ty);
+                    if (tile.Resource != null)
+                    {
+                        MineResource(tx, ty);
+                        return;
+                    }
+                }
+            }
+        }
+
+        private void MineResource(int tileX, int tileY)
+        {
+            Tile tile = _world.GetTile(tileX, tileY);
+            if (tile.Resource == null) return;
+
+            tile.Resource.RemainingAmount--;
+
+            if (tile.Resource.RemainingAmount <= 0)
+            {
+                tile.Resource = null;
+                tile.IsWalkable = true;
+                _render.RedrawTerrain(_world);
+            }
+
+            _render.UpdateMineButtons(_world, _camera);
+            this.Focus();
         }
     }
 }
