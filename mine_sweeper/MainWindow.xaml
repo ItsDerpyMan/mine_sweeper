@@ -11,6 +11,31 @@
         <Grid Width="400" Height="400">
             <Canvas Name="area" ClipToBounds="True" Width="400" Height="400" />
             <Canvas Name="uiOverlay" ClipToBounds="True" Width="400" Height="400" IsHitTestVisible="True" />
+
+            <!-- Inventory overlay -->
+            <Grid Name="inventoryPanel" Visibility="Collapsed">
+                <!-- Semi-transparent backdrop -->
+                <Border Background="#CC000000" />
+
+                <Grid Margin="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="130" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Inventory grid (4x4) -->
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="Inventory [Tab]" Foreground="White" FontSize="14" FontWeight="Bold" Margin="0,0,0,8" HorizontalAlignment="Center" />
+                        <UniformGrid Name="inventoryGrid" Rows="4" Columns="4" Width="220" Height="220" />
+                    </StackPanel>
+
+                    <!-- Shop offers -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="Upgrades" Foreground="Gold" FontSize="13" FontWeight="Bold" Margin="0,0,0,8" HorizontalAlignment="Center" />
+                        <StackPanel Name="shopPanel" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
         </Grid>
     </Border>
 </Window>

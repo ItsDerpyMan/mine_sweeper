@@ -144,52 +144,57 @@ namespace mine_sweeper.render
             }
         }
 
-        public void UpdateMineButtons(World world, Camera camera)
+        public void UpdateMineButtons(World world, Camera camera, int range = 1)
         {
             foreach (var btn in _mineButtons)
                 _uiOverlay.Children.Remove(btn);
             _mineButtons.Clear();
 
-            int[][] offsets = { new[] {0,-1}, new[] {0,1}, new[] {-1,0}, new[] {1,0} };
-
-            foreach (var off in offsets)
+            var checked_ = new HashSet<(int, int)>();
+            for (int dist = 1; dist <= range; dist++)
             {
-                int tx = _playerX + off[0];
-                int ty = _playerY + off[1];
-
-                if (tx < 0 || tx >= _worldWidth || ty < 0 || ty >= _worldHeight)
-                    continue;
-
-                Tile tile = world.GetTile(tx, ty);
-                if (tile.Resource == null)
-                    continue;
-
-                Point screenPos = camera.WorldToScreen(tx, ty);
-                double tileScreenSize = TileSize * camera.Scale;
-
-                var btn = new Button
+                int[][] offsets = { new[] {0,-dist}, new[] {0,dist}, new[] {-dist,0}, new[] {dist,0} };
+                foreach (var off in offsets)
                 {
-                    Content = $"Mine [E]\n{tile.Resource.Type}",
-                    FontSize = 9,
-                    Padding = new Thickness(2),
-                    Background = new SolidColorBrush(Color.FromArgb(200, 40, 40, 40)),
-                    Foreground = System.Windows.Media.Brushes.White,
-                    BorderBrush = System.Windows.Media.Brushes.Gray,
-                    BorderThickness = new Thickness(1),
-                    Tag = new int[] { tx, ty }
-                };
+                    int tx = _playerX + off[0];
+                    int ty = _playerY + off[1];
+                    if (!checked_.Add((tx, ty))) continue;
 
-                btn.Click += (s, e) => OnMineRequested?.Invoke(tx, ty);
+                    if (tx < 0 || tx >= _worldWidth || ty < 0 || ty >= _worldHeight)
+                        continue;
 
-                btn.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                double btnWidth = btn.DesiredSize.Width;
-                double btnHeight = btn.DesiredSize.Height;
+                    Tile tile = world.GetTile(tx, ty);
+                    if (tile.Resource == null)
+                        continue;
 
-                Canvas.SetLeft(btn, screenPos.X + (tileScreenSize - btnWidth) / 2);
-                Canvas.SetTop(btn, screenPos.Y - btnHeight - 2);
+                    Point screenPos = camera.WorldToScreen(tx, ty);
+                    double tileScreenSize = TileSize * camera.Scale;
 
-                _uiOverlay.Children.Add(btn);
-                _mineButtons.Add(btn);
+                    var btn = new Button
+                    {
+                        Content = $"Mine [E]\n{tile.Resource.Type}",
+                        FontSize = 9,
+                        Focusable = false,
+                        Padding = new Thickness(2),
+                        Background = new SolidColorBrush(Color.FromArgb(200, 40, 40, 40)),
+                        Foreground = System.Windows.Media.Brushes.White,
+                        BorderBrush = System.Windows.Media.Brushes.Gray,
+                        BorderThickness = new Thickness(1),
+                        Tag = new int[] { tx, ty }
+                    };
+
+                    btn.Click += (s, e) => OnMineRequested?.Invoke(tx, ty);
+
+                    btn.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    double btnWidth = btn.DesiredSize.Width;
+                    double btnHeight = btn.DesiredSize.Height;
+
+                    Canvas.SetLeft(btn, screenPos.X + (tileScreenSize - btnWidth) / 2);
+                    Canvas.SetTop(btn, screenPos.Y - btnHeight - 2);
+
+                    _uiOverlay.Children.Add(btn);
+                    _mineButtons.Add(btn);
+                }
             }
         }
 
