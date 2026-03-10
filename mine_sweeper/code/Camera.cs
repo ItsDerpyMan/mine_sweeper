@@ -5,7 +5,7 @@ using System.Windows.Media;
 
 namespace mine_sweeper.render
 {
-    class Camera
+    public class Camera
     {
         private const int TileSize = 16;
         public double PosX { get; private set; }
