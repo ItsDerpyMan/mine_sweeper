@@ -1,27 +1,24 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using mine_sweeper.world;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows;
 
 namespace mine_sweeper.render
 {
-    using System.Windows.Controls;
-    using System.Windows.Media;
-    using System.Windows.Media.Imaging;
-    using System.Windows;
-
     public class Render
     {
         private const int TileSize = 16;
         private Canvas _canvas;
-        private Dictionary<string, BitmapImage> _spriteCache = new();
-        private Image[,] _terrainLayer;
-        private Image[,] _resourceLayer;
-        private Image _playerImage;
+        private Dictionary<string, byte[]> _spritePixels = new();
+        private WriteableBitmap _backBuffer;
+        private Image _display;
         private int _worldWidth;
         private int _worldHeight;
+        private int _playerX;
+        private int _playerY;
 
         public Render(Canvas canvas)
         {
@@ -31,13 +28,18 @@ namespace mine_sweeper.render
         public void LoadSprites()
         {
             string basePath = "pack://application:,,,/Assets/";
-            _spriteCache["Grass"] = LoadImage($"{basePath}grass.png");
-            _spriteCache["Path"] = LoadImage($"{basePath}path.png");
-            _spriteCache["Stone"] = LoadImage($"{basePath}stone.png");
-            _spriteCache["Iron"] = LoadImage($"{basePath}iron.png");
-            _spriteCache["Gold"] = LoadImage($"{basePath}gold.png");
-            _spriteCache["Diamond"] = LoadImage($"{basePath}diamond.png");
-            _spriteCache["Player"] = LoadImage($"{basePath}player.png");
+            string[] names = { "Grass", "Path", "Stone", "Iron", "Gold", "Diamond", "Player" };
+            string[] files = { "grass.png", "path.png", "stone.png", "iron.png", "gold.png", "diamond.png", "player.png" };
+
+            for (int i = 0; i < names.Length; i++)
+            {
+                var bmp = LoadImage($"{basePath}{files[i]}");
+                // Convert to BGRA pixel array for fast blitting
+                var converted = new FormatConvertedBitmap(bmp, PixelFormats.Bgra32, null, 0);
+                byte[] pixels = new byte[TileSize * TileSize * 4];
+                converted.CopyPixels(pixels, TileSize * 4, 0);
+                _spritePixels[names[i]] = pixels;
+            }
         }
 
         private BitmapImage LoadImage(string uri)
@@ -51,83 +53,168 @@ namespace mine_sweeper.render
             return img;
         }
 
-        // Call once after world is created
         public void InitializeGrid(World world, int playerX, int playerY)
         {
             _canvas.Children.Clear();
             _worldWidth = world.Width;
             _worldHeight = world.Height;
+            _playerX = playerX;
+            _playerY = playerY;
 
-            _terrainLayer = new Image[_worldWidth, _worldHeight];
-            _resourceLayer = new Image[_worldWidth, _worldHeight];
+            int pixelWidth = _worldWidth * TileSize;
+            int pixelHeight = _worldHeight * TileSize;
 
-            for (int x = 0; x < _worldWidth; x++)
+            _backBuffer = new WriteableBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Bgra32, null);
+
+            _display = new Image
             {
-                for (int y = 0; y < _worldHeight; y++)
-                {
-                    var terrain = CreateImage();
-                    Canvas.SetLeft(terrain, x * TileSize);
-                    Canvas.SetTop(terrain, y * TileSize);
-                    _canvas.Children.Add(terrain);
-                    _terrainLayer[x, y] = terrain;
-
-                    var resource = CreateImage();
-                    Canvas.SetLeft(resource, x * TileSize);
-                    Canvas.SetTop(resource, y * TileSize);
-                    resource.Visibility = Visibility.Collapsed;
-                    _canvas.Children.Add(resource);
-                    _resourceLayer[x, y] = resource;
-                }
-            }
-
-            _playerImage = CreateImage();
-            _playerImage.Source = _spriteCache["Player"];
-            Canvas.SetLeft(_playerImage, playerX * TileSize);
-            Canvas.SetTop(_playerImage, playerY * TileSize);
-            _canvas.Children.Add(_playerImage);
+                Width = pixelWidth,
+                Height = pixelHeight,
+                SnapsToDevicePixels = true,
+                Source = _backBuffer
+            };
+            RenderOptions.SetBitmapScalingMode(_display, BitmapScalingMode.NearestNeighbor);
+            Canvas.SetLeft(_display, 0);
+            Canvas.SetTop(_display, 0);
+            _canvas.Children.Add(_display);
 
             DrawGameArea(world);
         }
 
-        private Image CreateImage()
-        {
-            var img = new Image
-            {
-                Width = TileSize,
-                Height = TileSize,
-                SnapsToDevicePixels = true
-            };
-            RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
-            return img;
-        }
-
         public void DrawGameArea(World world)
         {
-            for (int x = 0; x < _worldWidth; x++)
+            _backBuffer.Lock();
+            try
             {
-                for (int y = 0; y < _worldHeight; y++)
+                int stride = _backBuffer.BackBufferStride;
+                IntPtr buffer = _backBuffer.BackBuffer;
+
+                for (int x = 0; x < _worldWidth; x++)
                 {
-                    Tile tile = world.GetTile(x, y);
-
-                    _terrainLayer[x, y].Source = _spriteCache[tile.Type.ToString()];
-
-                    if (tile.Resource != null)
+                    for (int y = 0; y < _worldHeight; y++)
                     {
-                        _resourceLayer[x, y].Source = _spriteCache[tile.Resource.Type.ToString()];
-                        _resourceLayer[x, y].Visibility = Visibility.Visible;
+                        Tile tile = world.GetTile(x, y);
+
+                        // Draw terrain
+                        BlitSprite(buffer, stride, x, y, _spritePixels[tile.Type.ToString()]);
+
+                        // Draw resource on top (alpha-blended)
+                        if (tile.Resource != null)
+                        {
+                            BlitSpriteAlpha(buffer, stride, x, y, _spritePixels[tile.Resource.Type.ToString()]);
+                        }
                     }
-                    else
-                    {
-                        _resourceLayer[x, y].Visibility = Visibility.Collapsed;
-                    }
+                }
+
+                // Draw player on top
+                BlitSpriteAlpha(buffer, stride, _playerX, _playerY, _spritePixels["Player"]);
+
+                _backBuffer.AddDirtyRect(new Int32Rect(0, 0, _backBuffer.PixelWidth, _backBuffer.PixelHeight));
+            }
+            finally
+            {
+                _backBuffer.Unlock();
+            }
+        }
+
+        public void DrawPlayer(int x, int y, World world)
+        {
+            int oldX = _playerX;
+            int oldY = _playerY;
+            _playerX = x;
+            _playerY = y;
+
+            _backBuffer.Lock();
+            try
+            {
+                int stride = _backBuffer.BackBufferStride;
+                IntPtr buffer = _backBuffer.BackBuffer;
+
+                // Redraw old player position (terrain + possible resource)
+                RedrawTile(buffer, stride, oldX, oldY, world);
+
+                // Redraw new player position (terrain + possible resource + player)
+                RedrawTile(buffer, stride, x, y, world);
+                BlitSpriteAlpha(buffer, stride, x, y, _spritePixels["Player"]);
+
+                // Mark only the changed regions as dirty
+                _backBuffer.AddDirtyRect(new Int32Rect(oldX * TileSize, oldY * TileSize, TileSize, TileSize));
+                _backBuffer.AddDirtyRect(new Int32Rect(x * TileSize, y * TileSize, TileSize, TileSize));
+            }
+            finally
+            {
+                _backBuffer.Unlock();
+            }
+        }
+
+        private void RedrawTile(IntPtr buffer, int stride, int tileX, int tileY, World world)
+        {
+            Tile tile = world.GetTile(tileX, tileY);
+            BlitSprite(buffer, stride, tileX, tileY, _spritePixels[tile.Type.ToString()]);
+            if (tile.Resource != null)
+            {
+                BlitSpriteAlpha(buffer, stride, tileX, tileY, _spritePixels[tile.Resource.Type.ToString()]);
+            }
+        }
+
+        // Opaque blit — overwrites destination pixels entirely
+        private unsafe void BlitSprite(IntPtr buffer, int stride, int tileX, int tileY, byte[] spritePixels)
+        {
+            int startX = tileX * TileSize;
+            int startY = tileY * TileSize;
+
+            fixed (byte* srcPtr = spritePixels)
+            {
+                for (int row = 0; row < TileSize; row++)
+                {
+                    byte* dst = (byte*)buffer + (startY + row) * stride + startX * 4;
+                    byte* src = srcPtr + row * TileSize * 4;
+                    Buffer.MemoryCopy(src, dst, TileSize * 4, TileSize * 4);
                 }
             }
         }
 
-        public void DrawPlayer(int x, int y)
+        // Alpha-blended blit — respects source alpha channel
+        private unsafe void BlitSpriteAlpha(IntPtr buffer, int stride, int tileX, int tileY, byte[] spritePixels)
         {
-            Canvas.SetLeft(_playerImage, x * TileSize);
-            Canvas.SetTop(_playerImage, y * TileSize);
+            int startX = tileX * TileSize;
+            int startY = tileY * TileSize;
+
+            fixed (byte* srcPtr = spritePixels)
+            {
+                for (int row = 0; row < TileSize; row++)
+                {
+                    byte* dst = (byte*)buffer + (startY + row) * stride + startX * 4;
+                    byte* src = srcPtr + row * TileSize * 4;
+
+                    for (int col = 0; col < TileSize; col++)
+                    {
+                        int si = col * 4;
+                        int di = col * 4;
+                        byte sa = src[si + 3];
+
+                        if (sa == 255)
+                        {
+                            // Fully opaque — direct copy
+                            dst[di] = src[si];
+                            dst[di + 1] = src[si + 1];
+                            dst[di + 2] = src[si + 2];
+                            dst[di + 3] = 255;
+                        }
+                        else if (sa > 0)
+                        {
+                            // Semi-transparent — blend
+                            byte da = dst[di + 3];
+                            int invSa = 255 - sa;
+                            dst[di] = (byte)((src[si] * sa + dst[di] * invSa) / 255);
+                            dst[di + 1] = (byte)((src[si + 1] * sa + dst[di + 1] * invSa) / 255);
+                            dst[di + 2] = (byte)((src[si + 2] * sa + dst[di + 2] * invSa) / 255);
+                            dst[di + 3] = (byte)(sa + (da * invSa) / 255);
+                        }
+                        // sa == 0: fully transparent, skip
+                    }
+                }
+            }
         }
     }
 }
